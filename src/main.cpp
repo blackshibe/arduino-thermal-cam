@@ -1,19 +1,23 @@
-#include "SPI.h"
-#include "TFT_eSPI.h"
-
 #include "FS.h"
 #include "SD_MMC.h"
+#include "SPI.h"
 
-#include "esp_camera.h"
-#include "camera_pins.h"
-
-TFT_eSPI tft = TFT_eSPI();
+#include "module/camera.h"
+#include "module/tft.h"
 
 #define GPIO_BUILTIN_FLASH 4
 #define GPIO_BUILTIN_STATUS 33
 
 #define BUTTON_UP 13
-#define BUTTON_DOWN 16 
+#define BUTTON_DOWN 16
+
+bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
+	TFT_eSPI tft = get_tft();
+
+	tft.pushImage(x, y, w, h, bitmap);
+
+	return 1;
+}
 
 void blink_forever(int delay_ms) {
 	while (true) {
@@ -28,111 +32,111 @@ void setup() {
 	pinMode(GPIO_BUILTIN_FLASH, OUTPUT);
 	pinMode(GPIO_BUILTIN_STATUS, OUTPUT);
 
-	pinMode(BUTTON_UP, INPUT_PULLUP); 
-	pinMode(BUTTON_DOWN, INPUT_PULLUP); 
+	pinMode(BUTTON_UP, INPUT_PULLUP);
+	pinMode(BUTTON_DOWN, INPUT_PULLUP);
 
-	// if (!SD_MMC.begin("/sdcard", true)) blink_forever(50);
+	psramInit();
+
+	TJpgDec.setJpgScale(1);
+	TJpgDec.setSwapBytes(true);
+	TJpgDec.setCallback(tft_output);
+
+	// has to be done first so CS is set
+	bool sd_status = SD_MMC.begin("/sdcard", true);
+
+	TFT_eSPI tft = get_tft();
+	camera_controller camera = get_camera();
 
 	tft.init();
-	tft.setRotation(2);
-	tft.fillScreen(TFT_BLACK);
-	tft.println("Mounting MicroSD Card");
+	tft.setOrigin(8, 0);
+	tft.setRotation(0);
+	tft.fillScreen(TFT_WHITE);
+	tft.setTextColor(TFT_BLACK);
+	tft.setTextPadding(8);
 
-	uint8_t cardType = SD_MMC.cardType();
-	if (cardType == CARD_NONE) {
-		tft.println("No SD card attached");
-		return;
+	esp_err_t camera_status = camera.init();
+
+	if (camera_status == ESP_FAIL) {
+		tft.printf("camera init failed");
+		blink_forever(50);
+	} else {
+		tft.printf("display ready\n");
 	}
 
-	tft.print("SD Card Type: ");
-	if (cardType == CARD_MMC) tft.println("MMC");
-	else if (cardType == CARD_SD) tft.println("SDSC");
-	else if (cardType == CARD_SDHC) tft.println("SDHC");
-	else tft.println("UNKNOWN");
-
-	uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
-	tft.printf("SD Card Size: %lluMB\n", cardSize);
-
-	delay(2000);
-
-	camera_config_t config;
-	config.ledc_channel = LEDC_CHANNEL_0;
-	config.ledc_timer = LEDC_TIMER_0;
-	config.pin_d0 = Y2_GPIO_NUM;
-	config.pin_d1 = Y3_GPIO_NUM;
-	config.pin_d2 = Y4_GPIO_NUM;
-	config.pin_d3 = Y5_GPIO_NUM;
-	config.pin_d4 = Y6_GPIO_NUM;
-	config.pin_d5 = Y7_GPIO_NUM;
-	config.pin_d6 = Y8_GPIO_NUM;
-	config.pin_d7 = Y9_GPIO_NUM;
-	config.pin_xclk = XCLK_GPIO_NUM;
-	config.pin_pclk = PCLK_GPIO_NUM;
-	config.pin_vsync = VSYNC_GPIO_NUM;
-	config.pin_href = HREF_GPIO_NUM;
-	config.pin_sccb_sda = SIOD_GPIO_NUM;
-	config.pin_sccb_scl = SIOC_GPIO_NUM;
-	config.pin_pwdn = PWDN_GPIO_NUM;
-	config.pin_reset = RESET_GPIO_NUM;
-	config.xclk_freq_hz = 20000000;
-	config.frame_size = FRAMESIZE_QQVGA;
-	config.pixel_format = PIXFORMAT_RGB565;
-	config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-	config.fb_location = CAMERA_FB_IN_PSRAM;
-	config.jpeg_quality = 12;
-	config.fb_count = 1;
-
-	esp_err_t err = esp_camera_init(&config);
-	if (err != ESP_OK) {
-		tft.printf("Camera init failed with error 0x%x", err);
-		return;
+	if (psramFound()) {
+		tft.printf("PSRAM detected\n");
 	}
-	
-	tft.printf("camera initialized\n");
-	delay(2000);
-}
 
+	if (sd_status) {
+		tft.printf("sd available\n");
 
-void loop() {
-	tft.fillScreen(TFT_BLACK);
-	tft.setCursor(0, 0);
-	tft.setTextColor(TFT_WHITE, TFT_BLACK);
-	tft.setTextSize(2);
-
-	// tft.println(digitalRead(BUTTON_UP));
-	// tft.println(digitalRead(BUTTON_DOWN));
-
-	delay(128);
-
-	if (digitalRead(BUTTON_UP) == 0) {
-
-		digitalWrite(GPIO_BUILTIN_FLASH, HIGH);
-		delay(16);
-
-		camera_fb_t * fb = NULL;
-
-		fb = esp_camera_fb_get();  
-		digitalWrite(GPIO_BUILTIN_FLASH, LOW);
-
-		if(!fb) {
-			tft.println("Camera capture failed");
-			delay(1000);
+		uint8_t cardType = SD_MMC.cardType();
+		if (cardType == CARD_NONE) {
+			tft.printf("no sd attached");
 
 			return;
 		}
 
+		tft.print("sd card type: ");
+		if (cardType == CARD_MMC)
+			tft.printf("MMC\n");
+		else if (cardType == CARD_SD)
+			tft.printf("SDSC\n");
+		else if (cardType == CARD_SDHC)
+			tft.printf("SDHC\n");
+		else
+			tft.printf("UNKNOWN\n");
 
-
-		uint8_t *data = fb->buf;
-		size_t size = fb->len;
-		
-		tft.setRotation(1);
-		tft.setAddrWindow(0, 0, 160, 120);
-		tft.pushColors(data, size);
-		tft.setRotation(2);
-		
-
-		esp_camera_fb_return(fb); 
-		delay(5000);
+		uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
+		tft.printf("sd space: %lluMB\n", cardSize);
+	} else {
+		tft.printf("no sd card inserted\n");
 	}
+
+	delay(1000);
+	tft.fillScreen(TFT_BLACK);
+}
+
+void display_frame() {
+	camera_fb_t *fb = esp_camera_fb_get();
+	TFT_eSPI tft = get_tft();
+
+	if (!fb) {
+		tft.fillScreen(TFT_BLACK);
+		tft.printf("failed to get fb\n");
+		delay(100);
+		esp_camera_fb_return(fb);
+
+		return;
+	}
+
+	TJpgDec.drawJpg(0, 0, (const uint8_t *)fb->buf, fb->len);
+	esp_camera_fb_return(fb);
+}
+
+void loop() {
+	camera_controller camera = get_camera();
+	TFT_eSPI tft = get_tft();
+
+	int taking_photo = digitalRead(BUTTON_UP) == 0;
+	int flash_on = digitalRead(BUTTON_DOWN) == 0;
+
+	digitalWrite(GPIO_BUILTIN_FLASH, flash_on);
+
+	esp_err_t status = camera.set_mode(taking_photo ? cameraControlMode::photo : cameraControlMode::preview);
+	if (status != ESP_OK) {
+		tft.fillScreen(TFT_BLACK);
+		tft.printf("failed to set mode\n");
+		delay(100);
+
+		return;
+	}
+
+	display_frame();
+
+	tft.setCursor(0, 240);
+	tft.printf("total heap: %i\n", ESP.getHeapSize());
+	tft.printf("free heap: %i\n", ESP.getFreeHeap());
+	// tft.printf("total psram: %i\n", ESP.getPsramSize());
+	// tft.printf("free psram: %i\n", ESP.getFreePsram());
 }
