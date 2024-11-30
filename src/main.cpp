@@ -137,6 +137,4 @@ void loop() {
 	tft.setCursor(0, 240);
 	tft.printf("total heap: %i\n", ESP.getHeapSize());
 	tft.printf("free heap: %i\n", ESP.getFreeHeap());
-	// tft.printf("total psram: %i\n", ESP.getPsramSize());
-	// tft.printf("free psram: %i\n", ESP.getFreePsram());
 }

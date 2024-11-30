@@ -30,12 +30,12 @@ esp_err_t camera_controller::set_mode(cameraControlMode new_mode) {
 	if (!sensor)
 		return ESP_FAIL;
 
-	this->mode = new_mode;
-	if (new_mode == cameraControlMode::photo) {
-		sensor->set_quality(sensor, 10);
-	} else {
-		sensor->set_quality(sensor, 60);
-	}
+	// this->mode = new_mode;
+	// if (new_mode == cameraControlMode::photo) {
+	// 	sensor->set_quality(sensor, 10);
+	// } else {
+	// 	sensor->set_quality(sensor, 60);
+	// }
 
 	return ESP_OK;
 };
@@ -67,7 +67,7 @@ esp_err_t camera_controller::init() {
 	config.fb_location = CAMERA_FB_IN_DRAM;
 
 	config.frame_size = FRAMESIZE_240X240;
-	config.jpeg_quality = 60;
+	config.jpeg_quality = 10;
 	config.fb_count = 2;
 
 	this->mode = cameraControlMode::unset;
