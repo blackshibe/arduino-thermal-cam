@@ -30,12 +30,16 @@ esp_err_t camera_controller::set_mode(cameraControlMode new_mode) {
 	if (!sensor)
 		return ESP_FAIL;
 
-	// this->mode = new_mode;
-	// if (new_mode == cameraControlMode::photo) {
-	// 	sensor->set_quality(sensor, 10);
-	// } else {
-	// 	sensor->set_quality(sensor, 60);
-	// }
+	sensor->set_hmirror(sensor, true);
+	
+	this->mode = new_mode;
+	if (new_mode == cameraControlMode::photo) {
+		sensor->set_quality(sensor, 6);
+		sensor->set_framesize(sensor, FRAMESIZE_UXGA);
+	} else {
+		sensor->set_quality(sensor, 1);
+		sensor->set_framesize(sensor, FRAMESIZE_240X240);
+	}
 
 	return ESP_OK;
 };
@@ -60,19 +64,19 @@ esp_err_t camera_controller::init() {
 	config.pin_sccb_scl = SIOC_GPIO_NUM;
 	config.pin_pwdn = PWDN_GPIO_NUM;
 	config.pin_reset = RESET_GPIO_NUM;
-
 	config.xclk_freq_hz = 20000000;
-	config.pixel_format = PIXFORMAT_JPEG;
+	config.frame_size = FRAMESIZE_QSXGA;
+	config.pixel_format = PIXFORMAT_JPEG;  // for streaming
+	//config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
 	config.grab_mode = CAMERA_GRAB_LATEST;
-	config.fb_location = CAMERA_FB_IN_DRAM;
-
-	config.frame_size = FRAMESIZE_240X240;
+	config.fb_location = CAMERA_FB_IN_PSRAM;
 	config.jpeg_quality = 10;
 	config.fb_count = 2;
 
-	this->mode = cameraControlMode::unset;
-
+	// camera init
 	esp_err_t err = esp_camera_init(&config);
+
+	this->mode = cameraControlMode::unset;
 
 	return err;
 }
