@@ -154,14 +154,21 @@ void setup() {
 	TFT_eSPI tft = get_tft();
 	camera_controller camera = get_camera();
 
+	// tft is already initialized
 	tft.init();
 	tft.setCursor(0, 0);
-    tft.setTextSize(1);
+	tft.setTextSize(1);
 	tft.setRotation(2);
 	tft.setTextColor(TFT_BLACK);
-	tft.fillScreen(TFT_WHITE);
+
+	if (!fast_init) {
+		tft.fillScreen(TFT_WHITE);		
+	} else {
+		tft.fillRect(0, 0, 160, 60, TFT_WHITE); 
+	}
+
 	tft.println(message);
-    tft.println(str_status);
+	tft.println(str_status);
 
 	mySerial.begin(printerBaudrate, SERIAL_8N1, rxPin, txPin);  // must be 8N1 mode
 	myPrinter.begin();
@@ -331,11 +338,12 @@ void loop() {
         esp_camera_deinit();
 
         // write   
-        tft.fillScreen(TFT_BLACK);
+        tft.fillScreen(TFT_WHITE);
+        tft.setTextColor(TFT_BLACK);
         int next = 1000;
         for (size_t i = 0; i < buffer->len; i++) {
             if (next == 0) {
-                tft.fillRect(0, 0, 80, 20, TFT_BLACK);
+                tft.fillRect(0, 0, 80, 20, TFT_WHITE);
                 tft.setCursor(0, 0);
                 tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
                 next = 1000;
@@ -347,9 +355,9 @@ void loop() {
 
 		file.close();
 
-        tft.fillScreen(TFT_BLACK);
+        tft.fillScreen(TFT_WHITE);
         tft.printf("Uploading to SDCard\n.");
-        tft.setCursor(0, 100000);
+        tft.setCursor(0, 1000);
 
         esp_camera_fb_return(buffer);
 		// time to restart
