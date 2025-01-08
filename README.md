@@ -2,6 +2,9 @@
 
 ESP32-CAM project that integrates with a TFT screen.
 
+![Back image for the ESP32-CAM project](img-back.jpeg)
+![Front image for the ESP32-CAM project](img-front.jpeg)
+
 ## Limitations
 
 -   GPIO 16 is used as a button but also by the camera
