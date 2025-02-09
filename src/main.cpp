@@ -35,7 +35,6 @@ HardwareSerial mySerial(1);
 Adafruit_Thermal myPrinter(&mySerial);
 
 bool listDir(fs::FS &fs, const char * dirname, uint8_t levels){
-	TFT_eSPI tft = get_tft();
     tft.printf("Listing directory: %s\n", dirname);
 
     File root = fs.open(dirname);
@@ -70,8 +69,6 @@ bool listDir(fs::FS &fs, const char * dirname, uint8_t levels){
 
 
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-	TFT_eSPI tft = get_tft();
-
 	tft.pushImage(x, y, w, h, bitmap);
 
 	return 1;
@@ -151,9 +148,6 @@ void setup() {
 	TJpgDec.setSwapBytes(true);
 	TJpgDec.setCallback(tft_output);
 
-	TFT_eSPI tft = get_tft();
-	camera_controller camera = get_camera();
-
 	// tft is already initialized
 	tft.init();
 	tft.setCursor(0, 0);
@@ -173,7 +167,7 @@ void setup() {
 	mySerial.begin(printerBaudrate, SERIAL_8N1, rxPin, txPin);  // must be 8N1 mode
 	myPrinter.begin();
 
-	esp_err_t camera_status = camera.init();
+	esp_err_t camera_status = camera_controller::instance.init();
 
     if (!fast_init) {
         if (camera_status == ESP_FAIL) {
@@ -216,7 +210,7 @@ void setup() {
         tft.println("' to connect");
     }
 
-	esp_err_t __status = camera.set_mode(cameraControlMode::preview);
+	esp_err_t __status = camera_controller::instance.set_mode(cameraControlMode::preview);
 
     delay(300);
 
@@ -226,8 +220,6 @@ void setup() {
 }
 
 void display_frame(camera_fb_t *fb, bool return_buffer = true) {
-	TFT_eSPI tft = get_tft();
-
 	if (!fb) {
 		tft.fillScreen(TFT_BLACK);
 		tft.printf("failed to get fb\n");
@@ -242,9 +234,6 @@ void display_frame(camera_fb_t *fb, bool return_buffer = true) {
 }
 
 void loop() {
-	camera_controller camera = get_camera();
-	TFT_eSPI tft = get_tft();
-
 	int taking_photo = digitalRead(BUTTON_UP) == 0;
 	int flash_on = digitalRead(BUTTON_DOWN) == 0;
 
@@ -290,7 +279,7 @@ void loop() {
 	if (taking_photo) {
 
 		digitalWrite(GPIO_BUILTIN_FLASH, true);
-		esp_err_t status = camera.set_mode(cameraControlMode::photo);
+		esp_err_t status = camera_controller::instance.set_mode(cameraControlMode::photo);
 
         // wait for framebuffer to get populated
         delay(500);
@@ -329,7 +318,7 @@ void loop() {
         SPIFFS.remove(".transport");
         
         String name = "/IMG_" + photo_number + ".jpg";
-		fs::File file = SPIFFS.open("/.transport", FILE_WRITE);
+		fs::File spiff_file = SPIFFS.open("/.transport", FILE_WRITE);
 		fs::File cam_status = SPIFFS.open("/.camstatus", FILE_WRITE);
 
 		cam_status.print(name);
@@ -341,19 +330,37 @@ void loop() {
         tft.fillScreen(TFT_WHITE);
         tft.setTextColor(TFT_BLACK);
         int next = 1000;
-        for (size_t i = 0; i < buffer->len; i++) {
-            if (next == 0) {
-                tft.fillRect(0, 0, 80, 20, TFT_WHITE);
-                tft.setCursor(0, 0);
-                tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
-                next = 1000;
-            }
+		bool is_cooked = false; // NOTE: temporary - going back a byte didn't work in testing, so for now the entire buffer is rewritten just so the photos actually save correctly
+		do {
+			is_cooked = false;
+			spiff_file.flush();
+			spiff_file.seek(0);
 
-            file.write(buffer->buf[i]);
-            next -= 1;
-        };
+			for (size_t i = 0; i < buffer->len; i++) {
+				if (next == 0) {
+					tft.fillRect(0, 0, 80, 20, TFT_WHITE);
+					tft.setCursor(0, 0);
+					tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
+					next = 1000;
+				}
 
-		file.close();
+				// Sometimes the byte doesn't get written, so we retry
+				if(!spiff_file.write(buffer->buf[i])) {
+					tft.fillScreen(TFT_RED);
+					tft.setCursor(0, 0);
+					tft.printf("Failed to write at offset: %d.\nRetrying to write the photo.", i);
+					delay(2000);
+					tft.fillScreen(TFT_WHITE);
+
+					is_cooked = true;
+					break;
+				}
+
+				next -= 1;
+			};
+		} while(is_cooked);
+
+		spiff_file.close();
 
         tft.fillScreen(TFT_WHITE);
         tft.printf("Uploading to SDCard\n.");
