@@ -4,6 +4,5 @@
 
 struct spiffs_controller {
 	esp_err_t init();
+	static spiffs_controller instance;
 };
-
-spiffs_controller get_spiffs();

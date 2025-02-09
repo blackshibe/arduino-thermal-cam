@@ -35,7 +35,6 @@ HardwareSerial mySerial(1);
 Adafruit_Thermal myPrinter(&mySerial);
 
 bool listDir(fs::FS &fs, const char * dirname, uint8_t levels){
-	TFT_eSPI tft = get_tft();
     tft.printf("Listing directory: %s\n", dirname);
 
     File root = fs.open(dirname);
@@ -70,8 +69,6 @@ bool listDir(fs::FS &fs, const char * dirname, uint8_t levels){
 
 
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-	TFT_eSPI tft = get_tft();
-
 	tft.pushImage(x, y, w, h, bitmap);
 
 	return 1;
@@ -151,9 +148,6 @@ void setup() {
 	TJpgDec.setSwapBytes(true);
 	TJpgDec.setCallback(tft_output);
 
-	TFT_eSPI tft = get_tft();
-	camera_controller camera = get_camera();
-
 	// tft is already initialized
 	tft.init();
 	tft.setCursor(0, 0);
@@ -173,7 +167,7 @@ void setup() {
 	mySerial.begin(printerBaudrate, SERIAL_8N1, rxPin, txPin);  // must be 8N1 mode
 	myPrinter.begin();
 
-	esp_err_t camera_status = camera.init();
+	esp_err_t camera_status = camera_controller::instance.init();
 
     if (!fast_init) {
         if (camera_status == ESP_FAIL) {
@@ -216,7 +210,7 @@ void setup() {
         tft.println("' to connect");
     }
 
-	esp_err_t __status = camera.set_mode(cameraControlMode::preview);
+	esp_err_t __status = camera_controller::instance.set_mode(cameraControlMode::preview);
 
     delay(300);
 
@@ -226,8 +220,6 @@ void setup() {
 }
 
 void display_frame(camera_fb_t *fb, bool return_buffer = true) {
-	TFT_eSPI tft = get_tft();
-
 	if (!fb) {
 		tft.fillScreen(TFT_BLACK);
 		tft.printf("failed to get fb\n");
@@ -242,9 +234,6 @@ void display_frame(camera_fb_t *fb, bool return_buffer = true) {
 }
 
 void loop() {
-	camera_controller camera = get_camera();
-	TFT_eSPI tft = get_tft();
-
 	int taking_photo = digitalRead(BUTTON_UP) == 0;
 	int flash_on = digitalRead(BUTTON_DOWN) == 0;
 
@@ -290,7 +279,7 @@ void loop() {
 	if (taking_photo) {
 
 		digitalWrite(GPIO_BUILTIN_FLASH, true);
-		esp_err_t status = camera.set_mode(cameraControlMode::photo);
+		esp_err_t status = camera_controller::instance.set_mode(cameraControlMode::photo);
 
         // wait for framebuffer to get populated
         delay(500);

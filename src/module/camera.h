@@ -16,6 +16,6 @@ struct camera_controller {
 	esp_err_t init();
 	esp_err_t print_dbg_info(TFT_eSPI tft);
 	esp_err_t set_mode(cameraControlMode new_mode);
-};
 
-camera_controller get_camera();
+	static camera_controller instance;
+};

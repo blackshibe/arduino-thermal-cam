@@ -1,6 +1,8 @@
 #include "camera.h"
 #include "tft.h"
 
+camera_controller camera_controller::instance;
+
 esp_err_t camera_controller::print_dbg_info(TFT_eSPI tft) {
 	sensor_t *sensor = esp_camera_sensor_get();
 	if (!sensor) {
@@ -79,12 +81,4 @@ esp_err_t camera_controller::init() {
 	this->mode = cameraControlMode::unset;
 
 	return err;
-}
-
-camera_controller *camera;
-camera_controller get_camera() {
-	if (camera == nullptr)
-		camera = new camera_controller();
-
-	return *camera;
 }
