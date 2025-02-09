@@ -318,7 +318,7 @@ void loop() {
         SPIFFS.remove(".transport");
         
         String name = "/IMG_" + photo_number + ".jpg";
-		fs::File file = SPIFFS.open("/.transport", FILE_WRITE);
+		fs::File spiff_file = SPIFFS.open("/.transport", FILE_WRITE);
 		fs::File cam_status = SPIFFS.open("/.camstatus", FILE_WRITE);
 
 		cam_status.print(name);
@@ -330,19 +330,37 @@ void loop() {
         tft.fillScreen(TFT_WHITE);
         tft.setTextColor(TFT_BLACK);
         int next = 1000;
-        for (size_t i = 0; i < buffer->len; i++) {
-            if (next == 0) {
-                tft.fillRect(0, 0, 80, 20, TFT_WHITE);
-                tft.setCursor(0, 0);
-                tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
-                next = 1000;
-            }
+		bool is_cooked = false; // NOTE: temporary - going back a byte didn't work in testing, so for now the entire buffer is rewritten just so the photos actually save correctly
+		do {
+			is_cooked = false;
+			spiff_file.flush();
+			spiff_file.seek(0);
 
-            file.write(buffer->buf[i]);
-            next -= 1;
-        };
+			for (size_t i = 0; i < buffer->len; i++) {
+				if (next == 0) {
+					tft.fillRect(0, 0, 80, 20, TFT_WHITE);
+					tft.setCursor(0, 0);
+					tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
+					next = 1000;
+				}
 
-		file.close();
+				// Sometimes the byte doesn't get written, so we retry
+				if(!spiff_file.write(buffer->buf[i])) {
+					tft.fillScreen(TFT_RED);
+					tft.setCursor(0, 0);
+					tft.printf("Failed to write at offset: %d.\nRetrying to write the photo.", i);
+					delay(2000);
+					tft.fillScreen(TFT_WHITE);
+
+					is_cooked = true;
+					break;
+				}
+
+				next -= 1;
+			};
+		} while(is_cooked);
+
+		spiff_file.close();
 
         tft.fillScreen(TFT_WHITE);
         tft.printf("Uploading to SDCard\n.");
