@@ -37,7 +37,7 @@ esp_err_t camera_controller::set_mode(cameraControlMode new_mode) {
 	this->mode = new_mode;
 	if (new_mode == cameraControlMode::photo) {
 		sensor->set_quality(sensor, 6);
-		sensor->set_framesize(sensor, FRAMESIZE_UXGA);
+		sensor->set_framesize(sensor, FRAMESIZE_FHD);
 	} else {
 		sensor->set_quality(sensor, 1);
 		sensor->set_framesize(sensor, FRAMESIZE_240X240);
