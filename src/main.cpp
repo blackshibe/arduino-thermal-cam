@@ -310,6 +310,9 @@ void loop() {
         delay(1000);
 
         myPrinter.printPos58Bitmap(PRINTER_OUTPUT_WIDTH, PRINTER_BUFFER_HEIGHT, printer_buffer, false);
+        myPrinter.println();
+        myPrinter.println();
+        myPrinter.println();
 
         // read camera photo count
         String photo_number;
@@ -393,28 +396,59 @@ void loop() {
 }
 
 bool printer_jpg_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-    constexpr int16_t CROP_OFFSET = (PRINTER_OUTPUT_WIDTH - PRINTER_BUFFER_WIDTH) / 2;
+    // constexpr int16_t CROP_OFFSET = (PRINTER_OUTPUT_WIDTH - PRINTER_BUFFER_WIDTH) / 2;
+    int16_t error_buffer[2][PRINTER_OUTPUT_WIDTH] = {0};
+
     for(uint16_t off_y = 0; off_y < h; ++off_y) {
         for(uint16_t off_x = 0; off_x < w; ++off_x) {
-            int16_t pixel_x = x + off_x;
-            if(pixel_x + CROP_OFFSET < 0 || pixel_x - CROP_OFFSET >= PRINTER_OUTPUT_WIDTH) {
+            uint16_t pixel_idx = off_x + off_y * w;
+            uint16_t pixel_x = x + off_x;
+            
+            // if(pixel_x + CROP_OFFSET < 0 || pixel_x - CROP_OFFSET >= PRINTER_OUTPUT_WIDTH) {
+            //     continue;
+            // }
+
+            if(pixel_x >= PRINTER_OUTPUT_WIDTH) {
                 continue;
             }
 
-            uint16_t pixel_idx = off_x + off_y * w;
-            uint16_t pixel_y = y + off_y;
-
             uint8_t red, green, blue;
             convert_rgb565_to_rgb888(bitmap[pixel_idx], red, green, blue);
+            int16_t gray = static_cast<uint16_t>(0.299f * red + 0.587f * green + 0.114f * blue);
 
+            gray += error_buffer[0][off_x];
+            int16_t new_pixel = (gray > 100) ? 255 : 0;
+            int16_t error = gray - new_pixel;
+
+            uint16_t pixel_y = y + off_y;
             uint16_t column_idx = get_pos58_buffer_idx(pixel_x, pixel_y);
-            bool is_black = ((red + green + blue) / 255.0f) > 1.3f;
+            bool is_black = !new_pixel;
 
-            if (is_black) {
+            if(is_black) {
                 printer_buffer[column_idx] |= (1 << get_pos58_buffer_pixel_offset(pixel_y));
-            } 
+            }
 
             tft.drawPixel(pixel_x, pixel_y, is_black ? TFT_BLACK : TFT_WHITE);
+
+            // NOTE TO FUTURE EMPLOYERS: AI GENERATED, I DO NOT TAKE RESPONSIBILITY FOR THIS DOGSHIT CODE!!!!!!!
+
+            if(off_x + 1 < w) {
+                error_buffer[0][off_x + 1] += (error * 7) >> 4; // Right pixel (7/16)
+            }
+            if(off_y + 1 < h) {
+                if(off_x - 1 >= 0) {
+                    error_buffer[1][off_x - 1] += (error * 3) >> 4; // Bottom-left pixel (3/16)
+                }
+                error_buffer[1][off_x] += (error * 5) >> 4; // Bottom pixel (5/16)
+                if(off_x + 1 < w) {
+                    error_buffer[1][off_x + 1] += error >> 4; // Bottom-right pixel (1/16)
+                }
+            }
+        }
+
+        for(uint16_t i = 0; i < w; ++i) {
+            error_buffer[0][i] = error_buffer[1][i]; 
+            error_buffer[1][i] = 0;
         }
     }
 
