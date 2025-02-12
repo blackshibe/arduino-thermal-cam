@@ -1,0 +1,3 @@
+[submodule "lib/Adafruit-Thermal-Printer-Library-POS58"]
+	path = lib/Adafruit-Thermal-Printer-Library-POS58
+	url = https://github.com/blackshibe/Adafruit-Thermal-Printer-Library-POS58

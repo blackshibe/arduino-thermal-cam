@@ -2,6 +2,9 @@
 #include "SD_MMC.h"
 #include "SPI.h"
 #include "Adafruit_Thermal.h"
+#include "utils.h"
+#include "options.h"
+#include "post_processing.h"
 #include <HardwareSerial.h> 
 
 #include "camera_pins.h"
@@ -11,13 +14,16 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 
-
+// note: THIS MUST BE THE SAME AS THE OUTPUT JPEG RESOLUTION!!!!!!!!!!!!!!!!!!!!!!!
 // ===========================
 // Enter your WiFi credentials
 // ===========================
 const char *ssid = "Aha";
 const char *password = "VD08RZ17U6MJ9MPR";
 
+uint8_t printer_buffer[PRINTER_BUFFER_WIDTH * (PRINTER_BUFFER_HEIGHT / 8)];  
+
+bool printer_jpg_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 void startCameraServer();
 void setupLedFlash(int pin);
 
@@ -71,7 +77,7 @@ bool listDir(fs::FS &fs, const char * dirname, uint8_t levels){
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
 	tft.pushImage(x, y, w, h, bitmap);
 
-	return 1;
+	return true;
 }
 
 void blink_forever(int delay_ms) {
@@ -144,9 +150,9 @@ void setup() {
 	// pinMode(BUTTON_DOWN, INPUT_PULLUP);
 	pinMode(txPin, OUTPUT);
 
-	TJpgDec.setJpgScale(1);
-	TJpgDec.setSwapBytes(true);
-	TJpgDec.setCallback(tft_output);
+    TJpgDec.setJpgScale(1);
+    TJpgDec.setSwapBytes(true);
+    TJpgDec.setCallback(tft_output);
 
 	// tft is already initialized
 	tft.init();
@@ -275,9 +281,8 @@ void loop() {
 	// 	delay(10000);
 	// 	abort();
 	// }
-	
-	if (taking_photo) {
 
+	if (taking_photo) {
 		digitalWrite(GPIO_BUILTIN_FLASH, true);
 		esp_err_t status = camera_controller::instance.set_mode(cameraControlMode::photo);
 
@@ -287,7 +292,7 @@ void loop() {
 		camera_fb_t* buffer = esp_camera_fb_get();
 
         // the buffer gets overwritten before it's read
-        TJpgDec.setJpgScale(8);
+        TJpgDec.setJpgScale(PRINTER_DOWNSCALE);
 		digitalWrite(GPIO_BUILTIN_FLASH, false);
 		display_frame(buffer, false);
 
@@ -296,6 +301,15 @@ void loop() {
         tft.fillScreen(TFT_BLACK);
         tft.setRotation(2);
         tft.printf("Preparing to upload\n");
+
+        memset(printer_buffer, 0, sizeof(printer_buffer));
+        TJpgDec.setJpgScale(PRINTER_DOWNSCALE);
+        TJpgDec.setCallback(printer_jpg_callback);
+		display_frame(buffer, false);
+
+        delay(1000);
+
+        myPrinter.printPos58Bitmap(PRINTER_OUTPUT_WIDTH, PRINTER_BUFFER_HEIGHT, printer_buffer, false);
 
         // read camera photo count
         String photo_number;
@@ -376,4 +390,33 @@ void loop() {
 
 	camera_fb_t *fb = esp_camera_fb_get();
 	display_frame(fb);
+}
+
+bool printer_jpg_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
+    constexpr int16_t CROP_OFFSET = (PRINTER_OUTPUT_WIDTH - PRINTER_BUFFER_WIDTH) / 2;
+    for(uint16_t off_y = 0; off_y < h; ++off_y) {
+        for(uint16_t off_x = 0; off_x < w; ++off_x) {
+            int16_t pixel_x = x + off_x;
+            if(pixel_x + CROP_OFFSET < 0 || pixel_x - CROP_OFFSET >= PRINTER_OUTPUT_WIDTH) {
+                continue;
+            }
+
+            uint16_t pixel_idx = off_x + off_y * w;
+            uint16_t pixel_y = y + off_y;
+
+            uint8_t red, green, blue;
+            convert_rgb565_to_rgb888(bitmap[pixel_idx], red, green, blue);
+
+            uint16_t column_idx = get_pos58_buffer_idx(pixel_x, pixel_y);
+            bool is_black = ((red + green + blue) / 255.0f) > 1.3f;
+
+            if (is_black) {
+                printer_buffer[column_idx] |= (1 << get_pos58_buffer_pixel_offset(pixel_y));
+            } 
+
+            tft.drawPixel(pixel_x, pixel_y, is_black ? TFT_BLACK : TFT_WHITE);
+        }
+    }
+
+    return true;
 }
