@@ -1,6 +1,6 @@
 #pragma once
 
-#include "camera_pins.h"
+#include "../config/camera_pins.h"
 #include "esp_camera.h"
 #include "tft.h"
 

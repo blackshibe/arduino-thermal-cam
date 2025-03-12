@@ -33,7 +33,7 @@ esp_err_t camera_controller::set_mode(cameraControlMode new_mode) {
 		return ESP_FAIL;
 
 	sensor->set_hmirror(sensor, true);
-	
+
 	this->mode = new_mode;
 	if (new_mode == cameraControlMode::photo) {
 		sensor->set_quality(sensor, 6);
@@ -68,8 +68,8 @@ esp_err_t camera_controller::init() {
 	config.pin_reset = RESET_GPIO_NUM;
 	config.xclk_freq_hz = 20000000;
 	config.frame_size = FRAMESIZE_QSXGA;
-	config.pixel_format = PIXFORMAT_JPEG;  // for streaming
-	//config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
+	config.pixel_format = PIXFORMAT_JPEG; // for streaming
+	// config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
 	config.grab_mode = CAMERA_GRAB_LATEST;
 	config.fb_location = CAMERA_FB_IN_PSRAM;
 	config.jpeg_quality = 10;
