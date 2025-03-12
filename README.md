@@ -2,7 +2,9 @@
 
 ESP32-CAM project that integrates with a TFT screen.
 
-| ![Back image for the ESP32-CAM project](img-back.jpeg) | ![Front image for the ESP32-CAM project](img-front.jpeg) |
+| ![Back image for the ESP32-CAM project](img_back.webp) | ![Front image for the ESP32-CAM project](img_front.webp) |
+| ------------------------------------------------------ | -------------------------------------------------------- |
+| ![Printing demo](img_demo_1.webp)                      | ![Printing demo](img_demo_2.webp)                        |
 | ------------------------------------------------------ | -------------------------------------------------------- |
 
 ## Limitations
@@ -14,13 +16,11 @@ ESP32-CAM project that integrates with a TFT screen.
 
 ## Todo
 
-[ ] - Write README.md
-[ ] - Fork Adafruit_Thermal library
-
-[x] - Saving images to SD card
-[x] - Large images don't work (over 32kb seemingly?)
-[ ] - Full display resolution isn't visible (top corner of display is just black for some reason)
-[ ] - Selecting file to read from for printing
-[ ] - Gallery
-[ ] - Settings
-[ ] - Switching between apps
+-   Selecting file to read from for printing
+-   Bluetooth serial printing?
+-   Gallery
+-   Flash toggle
+-   Finetune filter
+-   Nicer UI
+-   Handling errors (don't save without SD card)
+-   Prompt whether to print image
