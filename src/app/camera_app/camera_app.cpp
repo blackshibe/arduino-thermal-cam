@@ -5,10 +5,17 @@
 #include "module/printer.h"
 #include "module/tft.h"
 #include "utils.h"
+#include "SD_MMC.h"
 
 uint8_t printer_buffer[PRINTER_BUFFER_WIDTH * (PRINTER_BUFFER_HEIGHT / 8)];
 
 camera_app camera_app::instance;
+
+bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
+	tft.pushImage(x, y, w, h, bitmap);
+
+	return true;
+}
 
 bool printer_jpg_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
 	// constexpr int16_t CROP_OFFSET = (PRINTER_OUTPUT_WIDTH - PRINTER_BUFFER_WIDTH) / 2;
@@ -70,6 +77,11 @@ void camera_app::update() {
 	int taking_photo = digitalRead(BUTTON_UP) == 0;
 	int flash_on = digitalRead(BUTTON_DOWN) == 0;
 
+	if (app_manifest::instance.is_first_update) {
+		tft.setRotation(1);
+		TJpgDec.setCallback(tft_output);
+	}
+
 	if (taking_photo) {
 		digitalWrite(GPIO_BUILTIN_FLASH, true);
 		esp_err_t status = camera_controller::instance.set_mode(cameraControlMode::photo);
@@ -78,13 +90,16 @@ void camera_app::update() {
 		delay(500);
 
 		camera_fb_t *buffer = esp_camera_fb_get();
-
-		// the buffer gets overwritten before it's read
-		TJpgDec.setJpgScale(PRINTER_DOWNSCALE);
 		digitalWrite(GPIO_BUILTIN_FLASH, false);
+
+		TJpgDec.setJpgScale(8);
+		tft.fillScreen(TFT_BLACK);
 		display_frame(buffer, false);
 
-		delay(1000);
+		while (!taking_photo) {
+			taking_photo = digitalRead(BUTTON_UP) == 0;
+			delay(100);
+		}
 
 		tft.fillScreen(TFT_BLACK);
 		tft.setRotation(2);
@@ -93,9 +108,9 @@ void camera_app::update() {
 		memset(printer_buffer, 0, sizeof(printer_buffer));
 		TJpgDec.setJpgScale(PRINTER_DOWNSCALE);
 		TJpgDec.setCallback(printer_jpg_callback);
-		display_frame(buffer, false);
 
-		delay(1000);
+		tft.setRotation(1);
+		display_frame(buffer, false);
 
 		printer_controller::instance.printer.printPos58Bitmap(PRINTER_OUTPUT_WIDTH, PRINTER_BUFFER_HEIGHT, printer_buffer, false);
 		printer_controller::instance.printer.println();
@@ -118,66 +133,93 @@ void camera_app::update() {
 			cam_status.close();
 		}
 
-		// The SPIFFS filesystem is not big enough to store more information than a single image
-		SPIFFS.remove(".transport");
+		tft.setRotation(2);
+		tft.fillScreen(TFT_WHITE);
+		tft.setTextColor(TFT_BLACK);
+		tft.printf("Saving photo %s\n", photo_number.c_str());
+
+		// SD is unusable while tft spi is active
+		tft.getSPIinstance().end();
+		esp_camera_deinit();
+
+		delay(1000);
+		
+		// fs::File status = SPIFFS.open("/.camstatus", FILE_READ);
+		bool sd_status = SD_MMC.begin("/sdcard", true);
 
 		String name = "/IMG_" + photo_number + ".jpg";
-		fs::File spiff_file = SPIFFS.open("/.transport", FILE_WRITE);
+		fs::File sd_image = SD_MMC.open(name, FILE_WRITE);
 		fs::File cam_status = SPIFFS.open("/.camstatus", FILE_WRITE);
 
 		cam_status.print(name);
 		cam_status.close();
 
-		esp_camera_deinit();
+		sd_image.write(buffer->buf, buffer->len);
+		sd_image.close();
 
-		// write
-		tft.fillScreen(TFT_WHITE);
-		tft.setTextColor(TFT_BLACK);
-		int next = 1000;
-		bool is_cooked = false; // NOTE: temporary - going back a byte didn't work in testing, so for now the entire buffer is rewritten just so the photos actually save correctly
-		do {
-			is_cooked = false;
-			spiff_file.flush();
-			spiff_file.seek(0);
+		SD_MMC.end();
 
-			for (size_t i = 0; i < buffer->len; i++) {
-				if (next == 0) {
-					tft.fillRect(0, 0, 80, 20, TFT_WHITE);
-					tft.setCursor(0, 0);
-					tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
-					next = 1000;
-				}
-
-				// Sometimes the byte doesn't get written, so we retry
-				if (!spiff_file.write(buffer->buf[i])) {
-					tft.fillScreen(TFT_RED);
-					tft.setCursor(0, 0);
-					tft.printf("Failed to write at offset: %d.\nRetrying to write the photo.", i);
-					delay(2000);
-					tft.fillScreen(TFT_WHITE);
-
-					is_cooked = true;
-					break;
-				}
-
-				next -= 1;
-			};
-		} while (is_cooked);
-
-		spiff_file.close();
-
-		tft.fillScreen(TFT_WHITE);
-		tft.printf("Uploading to SDCard\n.");
-		tft.setCursor(0, 1000);
-
-		esp_camera_fb_return(buffer);
-		// time to restart
-		// TO TEST: see if doing this will free up SPI for writing to the SD card correctly
-		tft.getSPIinstance().end();
-		SPIFFS.end();
-		ESP.restart();
+		// tft.init();
+		// tft.fillScreen(TFT_WHITE);
+		// tft.printf("Uploading to SDCard\n.");
+		// tft.setCursor(0, 1000);
 	}
 
 	camera_fb_t *fb = esp_camera_fb_get();
 	display_frame(fb);
 }
+
+// String str_status = status.readString();
+// String message = "No message when syncing SPIFFS";
+// bool fast_init = str_status.length() > 0;
+
+// free up space by not initializing the sd card at all when not used
+// if (!spiffs_status)
+// 	message = "SPIFFS failed to initialize, cannot use SD card";
+// if (spiffs_status && fast_init) {
+// 	// has to be done first so CS is set
+// 	// the sd card is only available during boot
+
+// 	message = "Saved photo to SD";
+// 	move_file(SPIFFS, SD_MMC, "/.transport", str_status.c_str());
+
+// 	// clear camstatus
+// 	status.close();
+
+// 	status = SPIFFS.open("/.camstatus", FILE_WRITE);
+// 	status.print("");
+// 	status.close();
+// }
+
+// write
+
+// int next = 1000;
+// bool is_cooked = false; // NOTE: temporary - going back a byte didn't work in testing, so for now the entire buffer is rewritten just so the photos actually save correctly
+// do {
+// 	is_cooked = false;
+// 	sd_image.flush();
+// 	sd_image.seek(0);
+
+// 	for (size_t i = 0; i < buffer->len; i++) {
+// 		if (next == 0) {
+// 			tft.fillRect(0, 0, 80, 20, TFT_WHITE);
+// 			tft.setCursor(0, 0);
+// 			tft.printf("%d/%dKB\n", (int)(i * 0.001f), (int)(buffer->len * 0.001f));
+// 			next = 1000;
+// 		}
+
+// 		// Sometimes the byte doesn't get written, so we retry
+// 		if (!sd_image.write(buffer->buf[i])) {
+// 			tft.fillScreen(TFT_RED);
+// 			tft.setCursor(0, 0);
+// 			tft.printf("Failed to write at offset: %d.\nRetrying to write the photo.", i);
+// 			delay(2000);
+// 			tft.fillScreen(TFT_WHITE);
+
+// 			is_cooked = true;
+// 			break;
+// 		}
+
+// 		next -= 1;
+// 	};
+// } while (is_cooked);

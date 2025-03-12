@@ -1,17 +1,20 @@
-#include "FS.h"
-#include "SD_MMC.h"
-#include "app/camera_app/post_processing.h"
-#include "app/manifest.h"
-#include "config/options.h"
-#include "utils.h"
 #include <HardwareSerial.h>
+#include <WiFi.h>
 
+#include "FS.h"
+#include "esp_camera.h"
+
+#include "app/manifest.h"
+#include "app/camera_app/post_processing.h"
+
+#include "config/options.h"
 #include "config/camera_pins.h"
+
+#include "module/printer.h"
 #include "module/camera.h"
 #include "module/tft.h"
 
-#include "esp_camera.h"
-#include <WiFi.h>
+#include "utils.h"
 
 // Make sure to add this file
 #include "config/wifi.h"
@@ -52,11 +55,7 @@ bool listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
 	return true;
 }
 
-bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-	tft.pushImage(x, y, w, h, bitmap);
 
-	return true;
-}
 
 void blink_forever(int delay_ms) {
 	while (true) {
@@ -90,6 +89,8 @@ bool move_file(fs::FS &fs_start, fs::FS &fs_finish, const char *path1, const cha
 	return true;
 }
 
+unsigned long next_frame_time;
+
 void setup() {
 	pinMode(GPIO_BUILTIN_FLASH, OUTPUT);
 	pinMode(GPIO_BUILTIN_STATUS, OUTPUT);
@@ -100,76 +101,41 @@ void setup() {
 	// EARLY BOOT: SD CARD DOWNLOAD MODE
 	bool spiffs_status = SPIFFS.begin(true);
 
-	fs::File status = SPIFFS.open("/.camstatus", FILE_READ);
-	String str_status = status.readString();
-	String message = "No message when syncing SPIFFS";
-	bool fast_init = str_status.length() > 0;
-
-	// free up space by not initializing the sd card at all when not used
-	if (!spiffs_status)
-		message = "SPIFFS failed to initialize, cannot use SD card";
-	if (spiffs_status && fast_init) {
-		// has to be done first so CS is set
-		// the sd card is only available during boot
-		bool sd_status = SD_MMC.begin("/sdcard", true);
-
-		message = "Saved photo to SD";
-		move_file(SPIFFS, SD_MMC, "/.transport", str_status.c_str());
-
-		// clear camstatus
-		status.close();
-
-		status = SPIFFS.open("/.camstatus", FILE_WRITE);
-		status.print("");
-		status.close();
-	}
-
-	// LATE BOOT: TFT, CAMERA, PRINTER
 	pinMode(BUTTON_UP, INPUT_PULLUP);
 	// pinMode(BUTTON_DOWN, INPUT_PULLUP);
 
 	TJpgDec.setJpgScale(1);
 	TJpgDec.setSwapBytes(true);
-	TJpgDec.setCallback(tft_output);
 
-	// tft is already initialized
 	tft.init();
+	tft.fillScreen(TFT_WHITE);
 	tft.setCursor(0, 0);
 	tft.setTextSize(1);
 	tft.setRotation(2);
 	tft.setTextColor(TFT_BLACK);
 
-	if (!fast_init) {
-		tft.fillScreen(TFT_WHITE);
-	} else {
-		tft.fillRect(0, 0, 160, 60, TFT_WHITE);
-	}
-
-	tft.println(message);
-	tft.println(str_status);
+	printer_controller::instance.init();
 
 	esp_err_t camera_status = camera_controller::instance.init();
 
-	if (!fast_init) {
-		if (camera_status == ESP_FAIL) {
-			tft.printf("camera init failed");
-			blink_forever(50);
-		} else {
-			tft.printf("camera ready\n");
-		}
-
-		if (psramFound()) {
-			tft.printf("PSRAM detected\n");
-		}
-
-		tft.println("UP to continue");
+	if (camera_status == ESP_FAIL) {
+		tft.printf("camera init failed");
+		blink_forever(50);
+	} else {
+		tft.printf("camera ready\n");
 	}
 
-	while (digitalRead(BUTTON_UP) == 1 && !fast_init) {
+	if (psramFound()) {
+		tft.printf("PSRAM detected\n");
+	}
+
+	tft.println("UP to continue");
+
+	while (digitalRead(BUTTON_UP) == 1) {
 		delay(10);
 	}
 
-	while (digitalRead(BUTTON_UP) == 0 && !fast_init) {
+	while (digitalRead(BUTTON_UP) == 0) {
 		delay(10);
 	}
 
@@ -197,22 +163,26 @@ void setup() {
 
 	tft.fillScreen(TFT_BLACK);
 	tft.setRotation(1);
+
+	next_frame_time = millis();
+	app_manifest::instance.is_first_update = true;
 }
 
-unsigned long next_frame_time;
 void loop() {
 	if (millis() < next_frame_time) {
-		delay(16);
+		delay(32);
+		
+		return;
 	}
 
 	for (int i = 0; i < NUM_APPS; i++) {
-		app_definition app = app_manifest::apps[i];
-		if (app_manifest::open_app != i)
+		app_definition* app = app_manifest::apps[i];
+		if (app_manifest::instance.open_app != i)
 			continue;
 
-		app.update();
+		app->update();
 	}
 
-	// 30fps target
+	app_manifest::instance.is_first_update = false;
 	next_frame_time = millis() + 32;
 }

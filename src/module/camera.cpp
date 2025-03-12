@@ -40,7 +40,7 @@ esp_err_t camera_controller::set_mode(cameraControlMode new_mode) {
 		sensor->set_framesize(sensor, FRAMESIZE_FHD);
 	} else {
 		sensor->set_quality(sensor, 1);
-		sensor->set_framesize(sensor, FRAMESIZE_240X240);
+		sensor->set_framesize(sensor, FRAMESIZE_QVGA);
 	}
 
 	return ESP_OK;

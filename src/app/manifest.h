@@ -1,19 +1,21 @@
 #pragma once
 
 struct app_definition {
-	virtual void update() {};
+	virtual void update();
+	const char* name;
 };
 
 #define NUM_APPS 2
 
 struct app_manifest {
-	static int open_app;
-	static app_definition apps[];
-	static void transition_app(int new_app) {
-		app_manifest::open_app = new_app;
-	}
+	static app_definition* apps[];
+	static const char* names[];
+	static app_manifest instance;
 
-	app_manifest() {
-		open_app = 0;
+	int open_app = 0;
+	bool is_first_update;
+	const void transition_app(int new_app) {
+		open_app = new_app;
+		is_first_update = true;
 	}
 };
