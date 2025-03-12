@@ -151,6 +151,8 @@ void camera_app::update() {
 		tft.printf("Uploading\n");
 
 		printer_controller::instance.printer.printPos58Bitmap(PRINTER_OUTPUT_WIDTH, PRINTER_BUFFER_HEIGHT, printer_buffer, false);
+		printer_controller::instance.printer.println(); // leaves space to tear the page off
+		printer_controller::instance.printer.println();
 		printer_controller::instance.printer.println();
 
 		// read camera photo count
