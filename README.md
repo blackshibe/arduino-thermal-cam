@@ -10,7 +10,7 @@ ESP32-CAM project that integrates with a TFT screen.
 -   GPIO 16 is used as a button but also by the camera
     -   Workaround: Don't use it for taking photos
 -   MicroSD card is unusable when display is turned on
-    -   Workaround: Save files in SPIFFS and move them to SD-Card
+    -   Workaround: End TFT connection while saving files
 
 ## Todo
 

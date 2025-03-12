@@ -17,45 +17,70 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) 
 	return true;
 }
 
+// This code is from deepseek. The memory constraints of the ESP32 make this far more challenging 
+// and time consuming than I can handle.
 bool printer_jpg_callback(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-	// constexpr int16_t CROP_OFFSET = (PRINTER_OUTPUT_WIDTH - PRINTER_BUFFER_WIDTH) / 2;
-	int16_t error_buffer[2][PRINTER_OUTPUT_WIDTH] = {0};
+    // 8x8 Bayer matrix for finer dithering (64 entries)
+    static const uint8_t bayer_matrix[8][8] = {
+        {  0, 32,  8, 40,  2, 34, 10, 42 },
+        { 48, 16, 56, 24, 50, 18, 58, 26 },
+        { 12, 44,  4, 36, 14, 46,  6, 38 },
+        { 60, 28, 52, 20, 62, 30, 54, 22 },
+        {  3, 35, 11, 43,  1, 33,  9, 41 },
+        { 51, 19, 59, 27, 49, 17, 57, 25 },
+        { 15, 47,  7, 39, 13, 45,  5, 37 },
+        { 63, 31, 55, 23, 61, 29, 53, 21 }
+    };
 
-	for (uint16_t off_y = 0; off_y < h; ++off_y) {
-		for (uint16_t off_x = 0; off_x < w; ++off_x) {
-			uint16_t pixel_idx = off_x + off_y * w;
-			uint16_t pixel_x = x + off_x;
+    // Gamma correction LUT (2.2 gamma)
+    static uint8_t gamma_LUT[256];
+    static bool lut_initialized = false;
+    if (!lut_initialized) {
+        for (int i = 0; i < 256; i++) {
+            gamma_LUT[i] = static_cast<uint8_t>(pow(i / 255.0f, 2.2f) * 255.0f);
+        }
+        lut_initialized = true;
+    }
 
-			if (pixel_x >= PRINTER_OUTPUT_WIDTH) {
-				continue;
-			}
+    for (uint16_t off_y = 0; off_y < h; ++off_y) {
+        for (uint16_t off_x = 0; off_x < w; ++off_x) {
+            uint16_t pixel_idx = off_x + off_y * w;
+            uint16_t pixel_x = x + off_x;
+            if (pixel_x >= PRINTER_OUTPUT_WIDTH) continue;
 
-			uint8_t red, green, blue;
-			convert_rgb565_to_rgb888(bitmap[pixel_idx], red, green, blue);
-			int16_t gray = static_cast<uint16_t>(0.299f * red + 0.587f * green + 0.114f * blue);
+            uint16_t pixel_y = y + off_y;
 
-			gray += error_buffer[0][off_x];
-			int16_t new_pixel = (gray > 100) ? 255 : 0;
-			int16_t error = gray - new_pixel;
+            // Convert RGB565 to linear RGB888
+            uint8_t red, green, blue;
+            convert_rgb565_to_rgb888(bitmap[pixel_idx], red, green, blue);
 
-			uint16_t pixel_y = y + off_y;
-			uint16_t column_idx = get_pos58_buffer_idx(pixel_x, pixel_y);
-			bool is_black = !new_pixel;
+            // Apply gamma correction to lightness
+            uint8_t linear_red = gamma_LUT[red];
+            uint8_t linear_green = gamma_LUT[green];
+            uint8_t linear_blue = gamma_LUT[blue];
+            
+            // Calculate linear lightness
+            uint8_t lightness = static_cast<uint8_t>(
+                0.2126f * linear_red + 
+                0.7152f * linear_green + 
+                0.0722f * linear_blue
+            );
 
-			if (is_black) {
-				printer_buffer[column_idx] |= (1 << get_pos58_buffer_pixel_offset(pixel_y));
-			}
+            // Get Bayer threshold (0-255)
+            uint8_t threshold = bayer_matrix[off_y % 8][off_x % 8] * 4;
 
-			tft.drawPixel(pixel_x, pixel_y, is_black ? TFT_BLACK : TFT_WHITE);
-		}
+            // Apply dithering
+            bool is_black = lightness <= threshold;
+            uint16_t column_idx = get_pos58_buffer_idx(pixel_x, pixel_y);
 
-		for (uint16_t i = 0; i < w; ++i) {
-			error_buffer[0][i] = error_buffer[1][i];
-			error_buffer[1][i] = 0;
-		}
-	}
+            if (is_black) {
+                printer_buffer[column_idx] |= (1 << get_pos58_buffer_pixel_offset(pixel_y));
+            }
 
-	return true;
+            tft.drawPixel(pixel_x, pixel_y, is_black ? TFT_BLACK : TFT_WHITE);
+        }
+    }
+    return true;
 }
 
 void display_frame(camera_fb_t *fb, bool return_buffer = true) {
@@ -96,13 +121,16 @@ void camera_app::update() {
 		tft.fillScreen(TFT_BLACK);
 		display_frame(buffer, false);
 
-		while (!taking_photo) {
-			taking_photo = digitalRead(BUTTON_UP) == 0;
+		while (!flash_on) {
+			flash_on = digitalRead(BUTTON_DOWN) == 0;
 			delay(100);
 		}
 
-		tft.fillScreen(TFT_BLACK);
 		tft.setRotation(2);
+		tft.setTextColor(TFT_WHITE);
+
+		tft.fillScreen(TFT_BLACK);
+		tft.setCursor(0, 0);
 		tft.printf("Preparing to upload\n");
 
 		memset(printer_buffer, 0, sizeof(printer_buffer));
@@ -111,6 +139,16 @@ void camera_app::update() {
 
 		tft.setRotation(1);
 		display_frame(buffer, false);
+
+		delay(1000);
+		while (!flash_on) {
+			flash_on = digitalRead(BUTTON_DOWN) == 0;
+			delay(100);
+		}
+		
+		tft.fillScreen(TFT_BLACK);
+		tft.setCursor(0, 0);
+		tft.printf("Uploading\n");
 
 		printer_controller::instance.printer.printPos58Bitmap(PRINTER_OUTPUT_WIDTH, PRINTER_BUFFER_HEIGHT, printer_buffer, false);
 		printer_controller::instance.printer.println();
@@ -133,10 +171,13 @@ void camera_app::update() {
 			cam_status.close();
 		}
 
+		String name = "/IMG_" + photo_number + ".jpg";
+
 		tft.setRotation(2);
+		tft.setTextSize(1);
 		tft.fillScreen(TFT_WHITE);
 		tft.setTextColor(TFT_BLACK);
-		tft.printf("Saving photo %s\n", photo_number.c_str());
+		tft.printf("Saving photo %s\n", name);
 
 		// SD is unusable while tft spi is active
 		tft.getSPIinstance().end();
@@ -147,7 +188,6 @@ void camera_app::update() {
 		// fs::File status = SPIFFS.open("/.camstatus", FILE_READ);
 		bool sd_status = SD_MMC.begin("/sdcard", true);
 
-		String name = "/IMG_" + photo_number + ".jpg";
 		fs::File sd_image = SD_MMC.open(name, FILE_WRITE);
 		fs::File cam_status = SPIFFS.open("/.camstatus", FILE_WRITE);
 
@@ -158,11 +198,7 @@ void camera_app::update() {
 		sd_image.close();
 
 		SD_MMC.end();
-
-		// tft.init();
-		// tft.fillScreen(TFT_WHITE);
-		// tft.printf("Uploading to SDCard\n.");
-		// tft.setCursor(0, 1000);
+		ESP.restart();
 	}
 
 	camera_fb_t *fb = esp_camera_fb_get();

@@ -139,23 +139,23 @@ void setup() {
 		delay(10);
 	}
 
-	if (digitalRead(BUTTON_DOWN) == 0) {
-		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-		WiFi.setSleep(false);
+	// if (digitalRead(BUTTON_DOWN) == 0) {
+	// 	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+	// 	WiFi.setSleep(false);
 
-		while (WiFi.status() != WL_CONNECTED) {
-			delay(500);
-			tft.print(".");
-		}
-		tft.println("");
-		tft.println("WiFi connected");
+	// 	while (WiFi.status() != WL_CONNECTED) {
+	// 		delay(500);
+	// 		tft.print(".");
+	// 	}
+	// 	tft.println("");
+	// 	tft.println("WiFi connected");
 
-		startCameraServer();
+	// 	startCameraServer();
 
-		tft.print("Camera Ready! Use 'http://");
-		tft.print(WiFi.localIP());
-		tft.println("' to connect");
-	}
+	// 	tft.print("Camera Ready! Use 'http://");
+	// 	tft.print(WiFi.localIP());
+	// 	tft.println("' to connect");
+	// }
 
 	esp_err_t __status = camera_controller::instance.set_mode(cameraControlMode::preview);
 
